@@ -1,0 +1,20 @@
+{
+  "name": "gatsby-source-lbry",
+  "version": "1.0.0",
+  "description": "A Gatsby source for LBRY",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "gatsby",
+    "gatsby-plugin"
+  ],
+  "author": "Alex Grin <github@grin.io>",
+  "license": "MIT",
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "markdown-it": "^12.2.0",
+    "sync-fetch": "^0.3.0"
+  }
+}
