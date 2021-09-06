@@ -32,39 +32,61 @@ exports.sourceNodes = async ({actions, cache, createNodeId, createContentDigest}
   }
 
   search.result.items.forEach(post => {
+    const claim = underlyingClaim(post)
+    if (!claim) {
+      console.error(`${post.name} (${post.value.claim_id}): no underlying claim`)
+      console.log(post)
+      return
+    }
+
     let content = fetch(
       "https://cdn.lbryplayer.xyz/api/v4/streams/free/" +
-      [post.name, post.claim_id, post.value.source.sd_hash.substring(0, 6)].join("/")
+      [claim.name, claim.claim_id, claim.value.source.sd_hash.substring(0, 6)].join("/")
     ).text().trim()
 
     if (!content.startsWith(`---`))
     {
       // add our own frontmatter
-      const timestamp = post.value.release_time ? parseInt(post.value.release_time, 10) : post.timestamp;
+      const timestamp = claim.value.release_time ? parseInt(claim.value.release_time, 10) : claim.timestamp;
       const date = new Date(timestamp * 1000)
       const frontMatter = yaml.dump({
-        title: post.value.title,
+        title: claim.value.title,
         date: date.getFullYear().toString() + `-` + (date.getMonth() + 1).toString().padStart(2, '0') + `-` + date.getDate().toString().padStart(2, '0')
       })
       content = "---\n" + frontMatter + "---\n\n" + content
     }
 
     const nodeMetadata = {
-      id: createNodeId(`lbry-post-${post.claim_id}`),
+      id: createNodeId(`lbry-post-${claim.claim_id}`),
       parent: null, // this is used if nodes are derived from other nodes, a little different than a foreign key relationship, more fitting for a transformer plugin that is changing the node
       children: [],
       internal: {
         type: `LbryPost`,
         mediaType: `text/markdown`,
         content: content,
-        contentDigest: createContentDigest(post),
+        contentDigest: createContentDigest(claim),
       },
     }
 
-    createNode(Object.assign({}, post, nodeMetadata))
+    createNode(Object.assign({}, claim, nodeMetadata))
   })
 
   return
+}
+
+function underlyingClaim(post) {
+  if (!post) {
+    return null
+  }
+
+  switch(post.value_type) {
+    case 'stream':
+      return post;
+    case 'repost':
+      return post.reposted_claim;
+    default:
+      console.error("don't know how to handle " + post.value_type);
+  }
 }
 
 
