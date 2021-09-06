@@ -1,24 +1,6 @@
 const fetch = require("sync-fetch")
 const yaml = require('js-yaml')
 
-function sdk(method, params) {
-  console.log("SDK", method, params)
-  return fetch("http://localhost:5279", {
-    "method": "POST",
-    "headers": {
-      "content-type": "application/json-rpc",
-    },
-    "body": JSON.stringify({
-      jsonrpc: "2.0",
-      method: method,
-      params: params,
-    }),
-  }).json()
-}
-
-function fixUrl(url) {
-  return url.replace(/^lbry:\/\//, '').replace('#', ':')
-}
 
 exports.sourceNodes = async ({actions, cache, createNodeId, createContentDigest}, options) => {
   const {createNode} = actions
@@ -28,33 +10,19 @@ exports.sourceNodes = async ({actions, cache, createNodeId, createContentDigest}
   if (search.error)
   {
     console.log(search)
-    return null
+    return
   }
 
-  search.result.items.forEach(post => {
+  for (const post of search.result.items) {
     const claim = underlyingClaim(post)
     if (!claim) {
       console.error(`${post.name} (${post.value.claim_id}): no underlying claim`)
       console.log(post)
-      return
+      continue
     }
 
-    let content = fetch(
-      "https://cdn.lbryplayer.xyz/api/v4/streams/free/" +
-      [claim.name, claim.claim_id, claim.value.source.sd_hash.substring(0, 6)].join("/")
-    ).text().trim()
-
-    if (!content.startsWith(`---`))
-    {
-      // add our own frontmatter
-      const timestamp = claim.value.release_time ? parseInt(claim.value.release_time, 10) : claim.timestamp;
-      const date = new Date(timestamp * 1000)
-      const frontMatter = yaml.dump({
-        title: claim.value.title,
-        date: date.getFullYear().toString() + `-` + (date.getMonth() + 1).toString().padStart(2, '0') + `-` + date.getDate().toString().padStart(2, '0')
-      })
-      content = "---\n" + frontMatter + "---\n\n" + content
-    }
+    let content = await getContent(cache, claim)
+    content = fixFrontMatter(claim, content)
 
     const nodeMetadata = {
       id: createNodeId(`lbry-post-${claim.claim_id}`),
@@ -69,9 +37,48 @@ exports.sourceNodes = async ({actions, cache, createNodeId, createContentDigest}
     }
 
     createNode(Object.assign({}, claim, nodeMetadata))
-  })
+  }
+}
 
-  return
+async function getContent(cache, claim) {
+  const cacheKey = `lbry-post-${claim.claim_id}-${claim.value.source.sd_hash}`
+  const twentyFourHoursInMilliseconds = 24 * 60 * 60 * 1000
+
+
+  let cacheData = await cache.get(cacheKey)
+  if (cacheData && Date.now() < cacheData.lastChecked + twentyFourHoursInMilliseconds) {
+    return cacheData.content;
+  }
+
+  if (!cacheData) {
+    cacheData = { created: Date.now() }
+  }
+
+  cacheData.content = fetch(
+    "https://cdn.lbryplayer.xyz/api/v4/streams/free/" +
+    [claim.name, claim.claim_id, claim.value.source.sd_hash.substring(0, 6)].join("/")
+  ).text().trim()
+  cacheData.lastChecked = Date.now()
+
+  await cache.set(cacheKey, cacheData)
+
+  return cacheData.content
+}
+
+function fixFrontMatter(claim, content) {
+  if (!content.startsWith(`---`))
+  {
+    // add our own frontmatter
+    const timestamp = claim.value.release_time ? parseInt(claim.value.release_time, 10) : claim.timestamp;
+    const date = new Date(timestamp * 1000)
+    const frontMatter = yaml.dump({
+      title: claim.value.title,
+      date: date.getFullYear().toString() + `-` + (date.getMonth() + 1).toString().padStart(2, '0') + `-` + date.getDate().toString().padStart(2, '0')
+    })
+    content = "---\n" + frontMatter + "---\n\n" + content
+  }
+
+  return content
 }
 
 function underlyingClaim(post) {
@@ -89,8 +96,20 @@ function underlyingClaim(post) {
   }
 }
 
-
-// TODO: add cache: https://github.com/gatsbyjs/gatsby/blob/master/examples/creating-source-plugins/source-plugin/gatsby-node.js#L197
+function sdk(method, params) {
+  console.log("SDK", method, params)
+  return fetch("http://localhost:5279", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json-rpc",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: method,
+      params: params,
+    }),
+  }).json()
+}
 
 
 // exports.onCreateNode = ({node, actions, getNode}) => {
