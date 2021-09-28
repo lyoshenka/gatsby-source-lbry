@@ -54,10 +54,8 @@ async function getContent(cache, claim) {
     cacheData = { created: Date.now() }
   }
 
-  cacheData.content = fetch(
-    "https://cdn.lbryplayer.xyz/api/v4/streams/free/" +
-    [claim.name, claim.claim_id, claim.value.source.sd_hash.substring(0, 6)].join("/")
-  ).text().trim()
+  const res = sdk("get", {uri: claim.permanent_url, save_file: false})
+  cacheData.content = fetch(res.result.streaming_url).text().trim();
   cacheData.lastChecked = Date.now()
 
   await cache.set(cacheKey, cacheData)
